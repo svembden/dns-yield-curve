@@ -1,7 +1,12 @@
 import pandas as pd
 import numpy as np
 from dns.utils.helpers import nelson_siegel_function
+from dns.utils.logging import setup_logger
 from scipy.optimize import minimize
+
+logger = setup_logger(__name__, log_file="logs/dns_model.log")
+
+# cd "C:\Users\semva\OneDrive\Documenten\Code Projects\DNS_py\dns-yield-curve\src">> python -m dns.models.cross_sectional
 
 def estimate_cross_sectional_parameters(data):
     """
@@ -57,7 +62,6 @@ def estimate_cross_sectional_parameters(data, maturities):
     params = params.fillna(0)
     params = params.astype(float)
     
-
     mean_yields = data.mean(axis=0)
     tau = np.array(maturities)
     
@@ -69,10 +73,8 @@ def estimate_cross_sectional_parameters(data, maturities):
         0.4 # lambda
     ]
     
-    print("Initial Parameters:")
-    print(initial_params)
-    
-    
+    logger.debug(f"Initial parameter guesses:\n{initial_params}")
+
     # Bounds for parameters
     bounds = [
         (0, None),  # beta0
@@ -86,6 +88,8 @@ def estimate_cross_sectional_parameters(data, maturities):
         beta0, beta1, beta2, lambda_ = params
         model_yields = nelson_siegel_function(maturities, beta0, beta1, beta2, lambda_)
         return np.sum((observed_yields - model_yields) ** 2)
+    
+    logger.info("Starting parameter estimation...")
     
     # Estimate parameters for each date
     for date in data.index:
