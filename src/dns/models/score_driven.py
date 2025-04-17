@@ -1,3 +1,5 @@
+#@TODO IMPLEMENT:
+
 def score_driven_model(data, params):
     """
     Estimate the Dynamic Nelson Siegel model using a Score Driven GAS approach.

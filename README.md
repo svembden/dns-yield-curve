@@ -49,3 +49,38 @@ Two Jupyter notebooks are included for exploratory analysis and model comparison
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request for any enhancements or bug fixes.
+
+## Structure
+The project is structured as follows:
+
+```
+dns-yield-curve/
+    ├── setup.py
+    ├── requirements.txt
+    ├── src/
+    │   ├── dns/
+    │   │   ├── __init__.py
+    │   │   ├── models/
+    │   │   │   ├── __init__.py
+    │   │   │   ├── cross_sectional.py
+    │   │   │   ├── kalman_filter.py
+    │   │   │   ├── score_driven.py
+    │   │   │   └── lstm.py
+    │   │   ├── data/
+    │   │   │   ├── __init__.py
+    │   │   │   └── loader.py
+    │   │   ├── utils/
+    │   │   │   ├── __init__.py
+    │   │   │   └── helpers.py
+    │   │   └── tests/
+    │   │       ├── __init__.py
+    │   │       ├── test_cross_sectional.py
+    │   │       ├── test_kalman_filter.py
+    │   │       ├── test_score_driven.py
+    │   │       └── test_lstm.py
+    ├── notebooks/
+    │   ├── exploratory_analysis.ipynb
+    │   └── model_comparison.ipynb
+    └── README.md
+```
+

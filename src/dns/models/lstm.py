@@ -1,3 +1,5 @@
+#@TODO IMPLEMENT:
+
 from keras.models import Sequential
 from keras.layers import LSTM, Dense
 import numpy as np
