@@ -75,7 +75,7 @@ dns-yield-curve/
     │   │   │   └── helpers.py
     │   │   └── tests/
     │   │       ├── __init__.py
-    │   │       ├── test_cross_sectional.py
+    │   │       ├── test_cross_sectional_VAR.py
     │   │       ├── test_kalman_filter.py
     │   │       ├── test_score_driven.py
     │   │       └── test_lstm.py

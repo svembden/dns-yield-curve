@@ -43,9 +43,3 @@ def split_data(df, train_size=0.8):
     train_size = int(len(df) * train_size)
     train, test = df[:train_size], df[train_size:]
     return train, test
-
-def nelson_siegel_function(tau, beta0, beta1, beta2, lambda_):
-    """Nelson-Siegel yield function."""
-    term1 = (1 - np.exp(-lambda_ * tau)) / (lambda_ * tau)
-    term2 = term1 - np.exp(-lambda_ * tau)
-    return beta0 + beta1 * term1 + beta2 * term2
