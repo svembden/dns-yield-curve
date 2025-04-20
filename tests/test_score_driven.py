@@ -3,7 +3,7 @@
 import pandas as pd
 import numpy as np
 import pytest
-from src.dns.models.score_driven import ScoreDrivenModel
+from src.dnss.models.score_driven import ScoreDrivenModel
 
 # Load the data
 url = 'https://www.dropbox.com/s/inpnlugzkddp42q/bonds.csv?dl=1'

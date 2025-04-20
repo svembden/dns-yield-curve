@@ -3,7 +3,7 @@
 import pandas as pd
 import numpy as np
 import unittest
-from dns.models.lstm import LSTMModel  # Assuming LSTMModel is the class to be tested
+from dnss.models.lstm import LSTMModel  # Assuming LSTMModel is the class to be tested
 
 class TestLSTMModel(unittest.TestCase):
 

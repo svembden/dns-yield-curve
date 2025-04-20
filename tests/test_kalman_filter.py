@@ -2,7 +2,7 @@
 
 import unittest
 import pandas as pd
-from dns.models.kalman_filter import estimate_kalman_filter
+from dnss.models.kalman_filter import estimate_kalman_filter
 
 class TestKalmanFilter(unittest.TestCase):
 
