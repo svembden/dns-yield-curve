@@ -4,20 +4,26 @@ from dns.utils.logging import setup_logger
 from scipy.optimize import minimize
 from statsmodels.tsa.api import VAR
 
-logger = setup_logger(__name__, log_file="../logs/dns_model.log")
-
 class CSVAR:
     """Cross-Sectional Vector Autoregression model for yield curve analysis."""
     
-    def __init__(self):
-        """Initialize CSVAR model."""
-        self.logger = logger
+    def __init__(self, custom_logger=None):
+        """
+        Initialize CSVAR model.
+        
+        Parameters:
+        custom_logger (Logger, optional): Custom logger instance. If None, a default logger will be created.
+        """
+        if custom_logger is None:
+            self.logger = setup_logger(__name__)  # Create logger without log file
+        else:
+            self.logger = custom_logger
         self.params = None
         self.var_results = None
         self.maturities = None
     
     @staticmethod
-    def nelson_siegel_function(tau, beta0, beta1, beta2, lambda_):
+    def _nelson_siegel_function(tau, beta0, beta1, beta2, lambda_):
         """Nelson-Siegel yield function.
         
         Parameters:
@@ -34,23 +40,20 @@ class CSVAR:
         term2 = term1 - np.exp(-lambda_ * tau)
         
         return beta0 + beta1 * term1 + beta2 * term2
+
     
-    def estimate_cross_sectional_parameters(self, dates, data, maturities):
+    def _input_checks(self, dates, data, maturities):
         """
-        Estimate cross-sectional DNS parameters (βs) at each point in time.
+        Perform input checks for the CSVAR model.
         
         Parameters:
         dates (datetime-like): The dates for which to estimate parameters.
         data (DataFrame): The input data containing yield curve information.
         maturities (array-like): The maturities corresponding to the columns of the data.
         
-        Returns:
-        DataFrame: A DataFrame containing the estimated parameters.
+        Raises:
+        ValueError: If any of the input checks fail.
         """
-        # Store maturities for later use
-        self.maturities = np.array(maturities)
-        
-        # Input Checks
         if not isinstance(dates, (pd.DatetimeIndex, pd.Series)):
             raise ValueError("Input dates must be a pandas DatetimeIndex or Series.")
         if not isinstance(data, (pd.DataFrame, pd.Series)):
@@ -65,6 +68,25 @@ class CSVAR:
             raise ValueError("Length of maturities must match the number of columns in data.")
         if not len(dates) == len(data):
             raise ValueError("Length of dates must match the number of rows in data.")
+    
+    
+    def _estimate_cross_sectional_parameters(self, dates, data, maturities):
+        """
+        Estimate cross-sectional DNS parameters (βs) at each point in time.
+        
+        Parameters:
+        dates (datetime-like): The dates for which to estimate parameters.
+        data (DataFrame): The input data containing yield curve information.
+        maturities (array-like): The maturities corresponding to the columns of the data.
+        
+        Returns:
+        DataFrame: A DataFrame containing the estimated parameters.
+        """        
+        # Store maturities for later use
+        self.maturities = np.array(maturities)
+        
+        # Input Checks
+        self._input_checks(dates, data, maturities)
         
         # Initialize nelson-siegel parameters
         params = pd.DataFrame(index=dates, columns=['beta0', 'beta1', 'beta2', 'lambda'])
@@ -121,8 +143,9 @@ class CSVAR:
         
         self.params = params
         return params
+
     
-    def fit_var_model(self, params=None, maxlags=5, ic='aic'):
+    def _fit_var_model(self, params=None, maxlags=5, ic='aic'):
         """
         Fit a VAR model to the estimated parameters.
         
@@ -148,19 +171,79 @@ class CSVAR:
         self.var_results = results
         return results
     
-    def forecast(self, steps=10, conf_int=0.95):
+    
+    def _generate_yield_curves(self, parameter_df):
+        """
+        Generate yield curves from parameters.
+        
+        Parameters:
+        parameter_df (DataFrame): DataFrame containing beta0, beta1, beta2, and lambda parameters.
+        
+        Returns:
+        DataFrame: Yield curves for each date in the parameter DataFrame.
+        """
+        if self.maturities is None:
+            raise ValueError("Maturities not defined. Please estimate parameters first.")
+        
+        yield_curves = pd.DataFrame(index=parameter_df.index, columns=self.maturities)
+        
+        for date in parameter_df.index:
+            beta0 = parameter_df.loc[date, 'beta0']
+            beta1 = parameter_df.loc[date, 'beta1']
+            beta2 = parameter_df.loc[date, 'beta2']
+            lambda_ = parameter_df.loc[date, 'lambda']
+            
+            yield_curves.loc[date] = self.nelson_siegel_function(
+                self.maturities, beta0, beta1, beta2, lambda_
+            )
+        
+        return yield_curves
+    
+    
+    def fit(self, dates, data, maturities, maxlags=5, ic='aic', return_var_model=False):
+        """
+        Fit the Cross-Sectional VAR model in two steps:
+        1. Estimate Nelson-Siegel parameters for each date
+        2. Fit a VAR model to the estimated parameters
+        
+        Parameters:
+        dates (datetime-like): The dates for which to estimate parameters.
+        data (DataFrame): The input data containing yield curve information.
+        maturities (array-like): The maturities corresponding to the columns of the data.
+        maxlags (int, optional): Maximum number of lags for VAR model. Default is 5.
+        ic (str, optional): Information criterion to use. Default is 'aic'.
+        return_var_model (bool, optional): Whether to return the VAR model. Default is False.
+        
+        Returns:
+        tuple or object: If return_var_model is True, returns (params, var_results), 
+                        otherwise returns the CSVAR model instance.
+        """
+        # Step 1: Estimate cross-sectional parameters
+        params = self._estimate_cross_sectional_parameters(dates, data, maturities)
+        
+        # Step 2: Fit VAR model on the estimated parameters
+        var_results = self._fit_var_model(params, maxlags=maxlags, ic=ic)
+        
+        if return_var_model:
+            return params, var_results
+        
+        return self
+    
+    
+    def forecast(self, steps=10, conf_int=0.95, return_param_estimates=False):
         """
         Forecast future values of the yield curve parameters.
         
         Parameters:
         steps (int): Number of steps ahead to forecast. Default is 10.
         conf_int (float): Confidence interval for the forecast. Default is 0.95.
+        return_param_estimates (bool): Whether to return parameter estimates and variance. Default is False.
         
         Returns:
-        tuple: (forecast_df, forecast_variance, forecast_intervals)
-            - forecast_df: DataFrame with point forecasts
-            - forecast_variance: variance of the forecasts
-            - forecast_intervals: confidence intervals for forecasts
+        DataFrame: Forecasted yield curves.
+        DataFrame: Forecasted parameters (if return_param_estimates is True).
+        DataFrame: Forecasted variance (if return_param_estimates is True).
+        tuple: Forecasted confidence intervals (if return_param_estimates is True).
         """
         if self.var_results is None:
             raise ValueError("VAR model not fitted. Please fit the model first.")
@@ -188,68 +271,10 @@ class CSVAR:
             self.logger.warning("Confidence intervals calculation not supported in this statsmodels version.")
             forecast_intervals = None
         
-        return forecast_df, forecast_variance, forecast_intervals
-    
-    def generate_yield_curves(self, parameter_df):
-        """
-        Generate yield curves from parameters.
+        # Generate yield curves from forecasted parameters
+        yield_curves = self._generate_yield_curves(forecast_df)
         
-        Parameters:
-        parameter_df (DataFrame): DataFrame containing beta0, beta1, beta2, and lambda parameters.
-        
-        Returns:
-        DataFrame: Yield curves for each date in the parameter DataFrame.
-        """
-        if self.maturities is None:
-            raise ValueError("Maturities not defined. Please estimate parameters first.")
-        
-        yield_curves = pd.DataFrame(index=parameter_df.index, columns=self.maturities)
-        
-        for date in parameter_df.index:
-            beta0 = parameter_df.loc[date, 'beta0']
-            beta1 = parameter_df.loc[date, 'beta1']
-            beta2 = parameter_df.loc[date, 'beta2']
-            lambda_ = parameter_df.loc[date, 'lambda']
-            
-            yield_curves.loc[date] = self.nelson_siegel_function(
-                self.maturities, beta0, beta1, beta2, lambda_
-            )
+        if return_param_estimates:
+            return yield_curves, forecast_df, forecast_variance, forecast_intervals
         
         return yield_curves
-
-
-def main():
-    """Main function to run the CSVAR model."""
-    # Load the data
-    url = 'https://www.dropbox.com/s/inpnlugzkddp42q/bonds.csv?dl=1'
-    df = pd.read_csv(url, sep=';', index_col=0)
-    
-    maturities = np.array([3, 6, 9, 12, 15, 18, 21, 24, 30, 36, 48, 60, 72, 84, 96, 108, 120])
-    dates = pd.to_datetime(df.index, format="%Y:%m")
-    
-    # Create and use the CSVAR model
-    model = CSVAR()
-    
-    # Estimate parameters
-    params = model.estimate_cross_sectional_parameters(dates, df, maturities)
-    logger.info("Estimated Parameters:")
-    logger.info(params.head())
-    
-    # Fit VAR model
-    var_results = model.fit_var_model()
-    logger.info("VAR Model Results:")
-    logger.info(var_results.summary())
-    
-    # Forecast future parameters
-    forecast_horizon = 12  # 12 months ahead
-    forecast_df, _, forecast_intervals = model.forecast(steps=forecast_horizon)
-    logger.info("Parameter Forecasts (next 12 months):")
-    logger.info(forecast_df.head())
-    
-    # Generate forecasted yield curves
-    forecasted_yields = model.generate_yield_curves(forecast_df)
-    logger.info("Forecasted Yield Curves:")
-    logger.info(forecasted_yields.head())
-
-if __name__ == "__main__":
-    main()
