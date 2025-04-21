@@ -32,7 +32,7 @@ from dns.models.cross_sectional import estimate_parameters
 ```
 
 ## Theory
-The Dynamic Nelson Siegel model is a popular approach for modeling the yield curve. It is based on the idea that the yield curve can be represented as a function of three factors: level, slope, and curvature. The model is dynamic in the sense that these factors can evolve over time.
+The Dynamic Nelson Siegel model is a popular approach for modeling the yield curve. It is based on the idea that the yield curve can be represented as a function of three factors: level (\beta_0(t) or L_t), slope (\beta_1(t) or S_t), and curvature (\beta_2(t) or C_t). The model is dynamic in the sense that these factors can evolve over time.
 
 The model is defined as:
 $$
@@ -89,8 +89,20 @@ where:
 ### Kalman Filter
 The Kalman filter is a recursive algorithm that estimates the state of a dynamic system from a series of noisy measurements. In the context of the DNS model, it is used to estimate the parameters dynamically over time.
 
+$$
+X_t - \mu = A(X_{t-1} - \mu) + \eta_t, \quad A \in \mathbb{R}^{4 \times 4}, \quad \eta_t = \begin{bmatrix} \eta_t(\beta_0) \\ \eta_t(\beta_1) \\ \eta_t(\beta_2) \\ \eta_t(\lambda) \end{bmatrix}
+$$
 
+where:
+- A = diag(\(\phi_{00}, \phi_{11}, \phi_{22}, \phi_{33}\)),
+- \(\eta_t\) is distributed as \(N(0, Q)\), with \(Q\) = qq',
 
+$$
+y_t = B(\tau, \lambda_t) \cdot \begin{bmatrix} \beta_0(t) \\ \beta_1(t) \\ \beta_2(t) \end{bmatrix} + \epsilon_t
+$$
+
+where:
+- epsilon_t is distributed as \(N(0, \Sigma)\), \Sigma = diag(\sigma_1^2, ..., \sigma_N^2),
 
 ## Testing
 
