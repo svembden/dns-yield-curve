@@ -31,6 +31,67 @@ To use the package, import the desired estimation method from the `dns` package.
 from dns.models.cross_sectional import estimate_parameters
 ```
 
+## Theory
+The Dynamic Nelson Siegel model is a popular approach for modeling the yield curve. It is based on the idea that the yield curve can be represented as a function of three factors: level, slope, and curvature. The model is dynamic in the sense that these factors can evolve over time.
+
+The model is defined as:
+$$
+y(t) = \beta_0(t) + \beta_1(t) \cdot \frac{1 - e^{-\lambda_t\tau}}{\lambda_t\tau} + \beta_2(t) \cdot \left( \frac{1 - e^{-\lambda_t\tau}}{\lambda_t\tau} - e^{-\lambda_t\tau} \right)
+$$
+
+where:
+- \(y(t)\) is the yield at time \(t\),
+- \(\beta_0(t)\) is the level factor,
+- \(\beta_1(t)\) is the slope factor,
+- \(\beta_2(t)\) is the curvature factor,
+- \(\lambda_t\) is a decay factor,
+- \(\tau\) is the time to maturity.
+
+The model can be estimated using various methods. The first method is a cross-sectional estimation, where the parameters are estimated at each point and a VAR model is fitted to the time series of the parameters. The second method uses a Kalman filter to estimate the parameters dynamically.
+
+### Cross-Sectional VAR
+The cross-sectional VAR model is defined as:
+$$
+\begin{pmatrix}
+\beta_0(t) \\
+\beta_1(t) \\
+\beta_2(t) \\
+\lambda_t
+\end{pmatrix}
+=
+\begin{pmatrix}
+\phi_{00} & \phi_{01} & \phi_{02} & \phi_{03} \\
+\phi_{10} & \phi_{11} & \phi_{12} & \phi_{13} \\
+\phi_{20} & \phi_{21} & \phi_{22} & \phi_{23} \\
+\phi_{30} & \phi_{31} & \phi_{32} & \phi_{33}
+\end{pmatrix}
+\begin{pmatrix}
+\beta_0(t-1) \\
+\beta_1(t-1) \\
+\beta_2(t-1) \\
+\lambda_{t-1}
+\end{pmatrix}
++
+\begin{pmatrix}
+\epsilon_0(t) \\
+\epsilon_1(t) \\
+\epsilon_2(t) \\
+\epsilon_3(t)
+\end{pmatrix}
+$$
+
+where:
+- \(\phi_{ij}\) are the coefficients of the VAR model,
+- \(\epsilon_i(t)\) are the error terms.
+
+
+
+### Kalman Filter
+The Kalman filter is a recursive algorithm that estimates the state of a dynamic system from a series of noisy measurements. In the context of the DNS model, it is used to estimate the parameters dynamically over time.
+
+
+
+
 ## Testing
 
 Unit tests are provided for each estimation method. To run the tests, use:

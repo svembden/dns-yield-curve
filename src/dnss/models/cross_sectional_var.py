@@ -201,6 +201,10 @@ class CSVAR:
                 self.maturities, beta0, beta1, beta2, lambda_
             )
         
+        # Ensure yield curves is df
+        yield_curves = yield_curves.astype(float)
+        yield_curves.index = pd.to_datetime(yield_curves.index)
+        
         return yield_curves
     
     
@@ -224,6 +228,7 @@ class CSVAR:
         """
         # Step 1: Estimate cross-sectional parameters
         params = self._estimate_cross_sectional_parameters(dates, data, maturities)
+        params.index.freq = pd.infer_freq(params.index)
         
         # Step 2: Fit VAR model on the estimated parameters
         var_results = self._fit_var_model(params, maxlags=maxlags, ic=ic)
