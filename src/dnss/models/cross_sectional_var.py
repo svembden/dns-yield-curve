@@ -4,19 +4,17 @@ from dnss.utils.logging import setup_logger
 from scipy.optimize import minimize
 from statsmodels.tsa.api import VAR
 
-# To add:
-# - Fixed lambda optionality
-# - Svenson
-
 class CSVAR:
     """Cross-Sectional Vector Autoregression model for yield curve analysis."""
     
-    def __init__(self, custom_logger=None):
+    def __init__(self, fix_lambda=False, lambda_value=0.4, custom_logger=None):
         """
         Initialize CSVAR model.
         
         Parameters:
         custom_logger (Logger, optional): Custom logger instance. If None, a default logger will be created.
+        fix_lambda (bool, optional): Whether to keep lambda fixed across time. Default is False.
+        lambda_value (float, optional): Value for lambda when fixed. Default is 0.4.
         """
         if custom_logger is None:
             self.logger = setup_logger(__name__)  # Create logger without log file
@@ -25,6 +23,8 @@ class CSVAR:
         self.params = None
         self.var_results = None
         self.maturities = None
+        self.fix_lambda = fix_lambda
+        self.lambda_value = lambda_value
     
     @staticmethod
     def _nelson_siegel_function(tau, beta0, beta1, beta2, lambda_):
@@ -40,6 +40,9 @@ class CSVAR:
         Returns:
         array-like: The yield curve values.
         """
+        # Ensure tau is a numpy array
+        tau = np.array(tau, dtype=float)
+        
         term1 = (1 - np.exp(-lambda_ * tau)) / (lambda_ * tau)
         term2 = term1 - np.exp(-lambda_ * tau)
         
@@ -100,56 +103,98 @@ class CSVAR:
         mean_yields = data.mean(axis=0)
         tau = np.array(maturities, dtype=float)
         
-        # Initial parameter guesses
-        initial_params = [
-            mean_yields.iloc[-1],  # beta0
-            mean_yields.iloc[0] - mean_yields.iloc[-1],  # beta1
-            1.0,  # beta2
-            0.4  # lambda
-        ]
-        
-        self.logger.debug(f"Initial parameter guesses:\n{initial_params}")
-        
-        # Bounds for parameters
-        bounds = [
-            (0, None),  # beta0
-            (None, None),  # beta1
-            (0, None),  # beta2
-            (1e-8, None)  # lambda
-        ]
-        
-        # Objective function to minimize
-        def objective_function(params, maturities, observed_yields):
-            beta0, beta1, beta2, lambda_ = params
-            model_yields = self._nelson_siegel_function(maturities, beta0, beta1, beta2, lambda_)
-            return np.sum((observed_yields - model_yields) ** 2)
-        
-        self.logger.info("Starting parameter estimation...")
-        
-        # Estimate parameters for each date
-        for i, date in enumerate(data.index):
-            observed_yields = data.loc[date].values
+        if self.fix_lambda:
+            # Initial parameter guesses (without lambda)
+            initial_params = [
+                mean_yields.iloc[-1],  # beta0
+                mean_yields.iloc[0] - mean_yields.iloc[-1],  # beta1
+                1.0,  # beta2
+            ]
             
-            # Optimize to find the best parameters
-            result = minimize(
-                objective_function,
-                initial_params,
-                args=(tau, observed_yields),
-                bounds=bounds,
-                method='L-BFGS-B'
-            )
+            # Bounds for parameters (without lambda)
+            bounds = [
+                (0, None),  # beta0
+                (None, None),  # beta1
+                (0, None),  # beta2
+            ]
             
-            # Store optimized parameters
-            params.loc[dates[i], 'beta0'] = result.x[0]
-            params.loc[dates[i], 'beta1'] = result.x[1]
-            params.loc[dates[i], 'beta2'] = result.x[2]
-            params.loc[dates[i], 'lambda'] = result.x[3]
+            # Objective function to minimize with fixed lambda
+            def objective_function(params, maturities, observed_yields, lambda_value):
+                beta0, beta1, beta2 = params
+                model_yields = self._nelson_siegel_function(maturities, beta0, beta1, beta2, lambda_value)
+                return np.sum((observed_yields - model_yields) ** 2)
+            
+            self.logger.info(f"Starting parameter estimation with fixed lambda={self.lambda_value}...")
+            
+            # Estimate parameters for each date
+            for i, date in enumerate(data.index):
+                observed_yields = data.loc[date].values
+                
+                # Optimize to find the best parameters
+                result = minimize(
+                    objective_function,
+                    initial_params,
+                    args=(tau, observed_yields, self.lambda_value),
+                    bounds=bounds,
+                    method='L-BFGS-B'
+                )
+                
+                # Store optimized parameters
+                params.loc[dates[i], 'beta0'] = result.x[0]
+                params.loc[dates[i], 'beta1'] = result.x[1]
+                params.loc[dates[i], 'beta2'] = result.x[2]
+                params.loc[dates[i], 'lambda'] = self.lambda_value
+        else:
+            # Initial parameter guesses (with lambda)
+            initial_params = [
+                mean_yields.iloc[-1],  # beta0
+                mean_yields.iloc[0] - mean_yields.iloc[-1],  # beta1
+                1.0,  # beta2
+                0.4  # lambda
+            ]
+            
+            self.logger.debug(f"Initial parameter guesses:\n{initial_params}")
+            
+            # Bounds for parameters (with lambda)
+            bounds = [
+                (0, None),  # beta0
+                (None, None),  # beta1
+                (0, None),  # beta2
+                (1e-8, None)  # lambda
+            ]
+            
+            # Objective function to minimize with variable lambda
+            def objective_function(params, maturities, observed_yields):
+                beta0, beta1, beta2, lambda_ = params
+                model_yields = self._nelson_siegel_function(maturities, beta0, beta1, beta2, lambda_)
+                return np.sum((observed_yields - model_yields) ** 2)
+            
+            self.logger.info("Starting parameter estimation with variable lambda...")
+            
+            # Estimate parameters for each date
+            for i, date in enumerate(data.index):
+                observed_yields = data.loc[date].values
+                
+                # Optimize to find the best parameters
+                result = minimize(
+                    objective_function,
+                    initial_params,
+                    args=(tau, observed_yields),
+                    bounds=bounds,
+                    method='L-BFGS-B'
+                )
+                
+                # Store optimized parameters
+                params.loc[dates[i], 'beta0'] = result.x[0]
+                params.loc[dates[i], 'beta1'] = result.x[1]
+                params.loc[dates[i], 'beta2'] = result.x[2]
+                params.loc[dates[i], 'lambda'] = result.x[3]
         
         self.params = params
         return params
 
     
-    def _fit_var_model(self, params=None, maxlags=5, ic='aic'):
+    def _fit_var_model(self, params=None, maxlags=1, ic='aic'):
         """
         Fit a VAR model to the estimated parameters.
         
@@ -168,8 +213,14 @@ class CSVAR:
                 raise ValueError("No parameters available. Please estimate parameters first.")
             params = self.params
         
+        # If lambda is fixed, don't include it in the VAR model
+        if self.fix_lambda:
+            var_params = params[['beta0', 'beta1', 'beta2']].copy()
+        else:
+            var_params = params.copy()
+        
         # Fit the VAR model
-        model = VAR(params)
+        model = VAR(var_params)
         results = model.fit(maxlags=maxlags, ic=ic)
         
         self.var_results = results
@@ -195,7 +246,11 @@ class CSVAR:
             beta0 = parameter_df.loc[date, 'beta0']
             beta1 = parameter_df.loc[date, 'beta1']
             beta2 = parameter_df.loc[date, 'beta2']
-            lambda_ = parameter_df.loc[date, 'lambda']
+            
+            if 'lambda' in parameter_df.columns:
+                lambda_ = parameter_df.loc[date, 'lambda']
+            else:
+                lambda_ = self.lambda_value  # Use fixed lambda if not in DataFrame
             
             yield_curves.loc[date] = self._nelson_siegel_function(
                 self.maturities, beta0, beta1, beta2, lambda_
@@ -259,21 +314,45 @@ class CSVAR:
         
         self.logger.info(f"Forecasting {steps} steps ahead...")
         
+        # Prepare for forecasting
+        if self.fix_lambda:
+            # Get only beta parameters for forecasting
+            current_values = self.params[['beta0', 'beta1', 'beta2']].values
+        else:
+            current_values = self.params.values
+        
         # Generate forecasts
-        forecast = self.var_results.forecast(self.params.values, steps=steps)
+        forecast = self.var_results.forecast(current_values, steps=steps)
         forecast_variance = self.var_results.forecast_cov(steps=steps)
         
         # Create DataFrame for forecasts
         freq = pd.infer_freq(self.params.index)
         start_date = self.params.index[-1] + pd.tseries.frequencies.to_offset(freq)
         forecast_index = pd.date_range(start=start_date, periods=steps, freq=freq)
-        forecast_df = pd.DataFrame(forecast, index=forecast_index, columns=self.params.columns)
+        
+        if self.fix_lambda:
+            # Create forecast DataFrame with only beta parameters
+            forecast_df = pd.DataFrame(forecast, index=forecast_index, columns=['beta0', 'beta1', 'beta2'])
+            # Add lambda column with fixed value
+            forecast_df['lambda'] = self.lambda_value
+        else:
+            forecast_df = pd.DataFrame(forecast, index=forecast_index, columns=self.params.columns)
         
         # Calculate confidence intervals (if statsmodels version supports it)
         try:
-            forecast_intervals = self.var_results.forecast_interval(self.params.values, steps, alpha=(1-conf_int))
-            lower_bound = pd.DataFrame(forecast_intervals[0], index=forecast_index, columns=self.params.columns)
-            upper_bound = pd.DataFrame(forecast_intervals[1], index=forecast_index, columns=self.params.columns)
+            forecast_intervals = self.var_results.forecast_interval(current_values, steps, alpha=(1-conf_int))
+            
+            if self.fix_lambda:
+                # Handle fixed lambda case
+                lower_bound = pd.DataFrame(forecast_intervals[0], index=forecast_index, columns=['beta0', 'beta1', 'beta2'])
+                upper_bound = pd.DataFrame(forecast_intervals[1], index=forecast_index, columns=['beta0', 'beta1', 'beta2'])
+                # Add lambda columns
+                lower_bound['lambda'] = self.lambda_value
+                upper_bound['lambda'] = self.lambda_value
+            else:
+                lower_bound = pd.DataFrame(forecast_intervals[0], index=forecast_index, columns=self.params.columns)
+                upper_bound = pd.DataFrame(forecast_intervals[1], index=forecast_index, columns=self.params.columns)
+            
             forecast_intervals = (lower_bound, upper_bound)
         except (AttributeError, TypeError):
             # Fallback if forecast_interval is not available
