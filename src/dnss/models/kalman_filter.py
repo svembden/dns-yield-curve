@@ -129,7 +129,7 @@ class KALMAN:
         return params0
 
     def fit(self, dates: pd.DatetimeIndex, maturities: np.ndarray,
-            data: pd.DataFrame) -> np.ndarray:
+            data: pd.DataFrame) -> "KALMAN":
         """
         Estimate DNS parameters via EKF.
 
@@ -139,7 +139,7 @@ class KALMAN:
         data (DataFrame): Yields (T x N).
 
         Returns:
-        ndarray: Estimated parameter vector.
+        KALMAN: Self with fitted parameters.
         """
         input_checks(dates, data, maturities)
         self.dates = dates
@@ -157,7 +157,88 @@ class KALMAN:
         self.params = result.x
         self.logger.info(f"Optimized log-likelihood: {-result.fun}. Time taken: {datetime.now()-start_time}")
         
+        # Run Kalman filter with optimized parameters to store states and covariances
+        self.filtered_states, self.covariances = self._run_kalman_filter(self.params, y, tau)
+        self.logger.debug(f"Stored {len(self.filtered_states)} filtered states and covariance matrices")
+        
         return self
+
+    def _run_kalman_filter(self, params, y, tau):
+        """
+        Run Kalman filter with given parameters and store states and covariances.
+        
+        Parameters:
+        params (ndarray): Parameter vector.
+        y (ndarray): Yield data.
+        tau (ndarray): Maturities.
+        
+        Returns:
+        tuple: (filtered_states, covariances)
+        """
+        T, N = y.shape
+        # Unpack parameters
+        mu = params[0:4]
+        phi = params[4:8]
+        q_flat = params[8:24]
+        sigma_diag = params[24:24+N]
+
+        A = np.diag(phi)
+        q = q_flat.reshape(4, 4)
+        Q = q @ q.T
+        Sigma = np.diag(sigma_diag)
+
+        # Storage for filtered states and covariances
+        filtered_states = np.zeros((T, 4))
+        covariances = []
+        
+        # Initialize
+        x_tt = mu.copy()
+        P_tt = np.eye(4) * 0.1
+
+        for t in range(T):
+            # Prediction
+            x_pred = mu + A @ (x_tt - mu)
+            P_pred = A @ P_tt @ A.T + Q
+
+            L, S, C, lam = x_pred
+            lam = np.clip(lam, 1e-4, 10) # ensure positive
+            # Build B and H
+            B = np.zeros((N, 3))
+            H = np.zeros((N, 4))
+            for i in range(N):
+                tau_i = tau[i]
+                e = np.exp(-tau_i * lam)
+                denom = tau_i * lam if tau_i*lam>1e-6 else 1e-6
+                B[i,0] = 1
+                B[i,1] = (1 - e) / denom
+                B[i,2] = B[i,1] - e
+                # Derivatives
+                dS = (tau_i*lam*e - (1 - e)) / (tau_i * lam**2)
+                dC = dS + tau_i*e
+                dLam = S * dS + C * dC
+                H[i,0] = 1
+                H[i,1] = B[i,1]
+                H[i,2] = B[i,2]
+                H[i,3] = dLam
+
+            # Observation prediction
+            h = B @ np.array([L, S, C])
+            v = y[t] - h
+            S_t = H @ P_pred @ H.T + Sigma
+
+            try:
+                K = P_pred @ H.T @ inv(S_t)
+                x_tt = x_pred + K @ v
+                P_tt = (np.eye(4) - K @ H) @ P_pred
+            except np.linalg.LinAlgError:
+                # In case of numerical issues, use previous values
+                self.logger.warning(f"Numerical issue at step {t}. Using previous state and covariance.")
+                
+            # Store filtered state and covariance
+            filtered_states[t] = x_tt
+            covariances.append(P_tt.copy())
+
+        return filtered_states, covariances
 
     def predict(self, steps=10, conf_int=0.95, return_param_estimates=False):
         """
@@ -247,6 +328,8 @@ class KALMAN:
                                     columns=['L', 'S', 'C', 'lambda'])
         
         forecast_intervals = (lower_bound_df, upper_bound_df)
+        
+        self.logger.info("Forecasting complete.")
         
         if return_param_estimates:
             return yield_curves, forecast_df, forecast_covs, forecast_intervals
