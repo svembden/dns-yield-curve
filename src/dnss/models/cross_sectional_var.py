@@ -270,7 +270,7 @@ class CSVAR:
         return self
     
     
-    def forecast(self, steps=10, conf_int=0.95, return_param_estimates=False):
+    def predict(self, steps=10, conf_int=0.95, return_param_estimates=False):
         """
         Forecast future values of the yield curve parameters.
         

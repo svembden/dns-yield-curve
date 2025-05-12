@@ -6,9 +6,10 @@ from scipy.linalg import cholesky, solve_triangular, inv
 from sklearn.decomposition import PCA
 from statsmodels.tsa.ar_model import AutoReg
 from scipy.optimize import minimize
+from scipy.stats import norm
 from dnss.utils.logging import setup_logger
 from dnss.utils.helpers import input_checks
-
+from datetime import datetime
 
 class KALMAN:
     """Extended Kalman Filter for Dynamic Nelson-Siegel yield curve modeling."""
@@ -116,6 +117,7 @@ class KALMAN:
             phi.append(model.params[1])
         phi.append(0.9)  # phi lambda
         phi = np.array(phi)
+        # phi = np.array([0.9, 0.9, 0.9, 0.9]) # fix phi to 0.9
         # process noise
         q = np.tril(np.random.randn(4,4) * q_scale)
         q_flat = q.flatten()
@@ -146,14 +148,136 @@ class KALMAN:
         tau = maturities
         # initialize
         params0 = self._initialize_dns_params(y, tau)
-        self.logger.info(f"Initial parameters: {params0}")
+        self.logger.debug(f"Initial parameters: {params0}")
         bounds = [(None,None)]*4 + [(0.001,0.999)]*4 + [(-1,1)]*16 + [(1e-6,None)]*len(tau)
         self.logger.info("Starting EKF parameter estimation...")
+        start_time = datetime.now()
         result = minimize(self._ekf_loglik, params0,
                           args=(y, tau), bounds=bounds, method='L-BFGS-B')
         self.params = result.x
-        self.logger.info(f"Optimized log-likelihood: {-result.fun}")
+        self.logger.info(f"Optimized log-likelihood: {-result.fun}. Time taken: {datetime.now()-start_time}")
         
         return self
 
+    def predict(self, steps=10, conf_int=0.95, return_param_estimates=False):
+        """
+        Forecast future values of the yield curve using the Kalman filter.
+        
+        Parameters:
+        steps (int): Number of steps ahead to forecast. Default is 10.
+        conf_int (float): Confidence interval for the forecast. Default is 0.95.
+        return_param_estimates (bool): Whether to return parameter estimates and forecast variance. Default is False.
+        
+        Returns:
+        DataFrame: Forecasted yield curves.
+        DataFrame: Forecasted parameters (if return_param_estimates is True).
+        list: Forecasted covariance matrices (if return_param_estimates is True).
+        tuple: Forecasted confidence intervals (if return_param_estimates is True).
+        """
+        if self.params is None:
+            raise ValueError("Model not fitted. Please fit the model first.")
+        
+        if self.filtered_states is None:
+            raise ValueError("No filtered states available. Make sure to run fit() with store_states=True.")
+        
+        self.logger.info(f"Forecasting {steps} steps ahead...")
+        
+        # Unpack parameters
+        N = len(self.maturities)
+        mu = self.params[0:4]
+        phi = self.params[4:8]
+        q_flat = self.params[8:24]
+        
+        # Construct transition matrix
+        A = np.diag(phi)
+        
+        # Construct process noise covariance
+        q = q_flat.reshape(4, 4)
+        Q = q @ q.T
+        
+        # Starting point for forecasting: last filtered state and covariance
+        last_state = self.filtered_states[-1]
+        last_cov = self.covariances[-1]
+        
+        # Prepare forecast containers
+        forecast_states = np.zeros((steps, 4))
+        forecast_covs = []
+        
+        # Calculate Z critical value for confidence interval
+        z_value = -1 * norm.ppf((1 - conf_int) / 2)
+        
+        # Forecast states and covariances
+        x_pred = last_state.copy()
+        P_pred = last_cov.copy()
+        
+        for i in range(steps):
+            # State prediction
+            x_pred = mu + A @ (x_pred - mu)
+            P_pred = A @ P_pred @ A.T + Q
+            
+            # Store predictions
+            forecast_states[i] = x_pred
+            forecast_covs.append(P_pred.copy())
+        
+        # Create DataFrame for forecasts
+        freq = pd.infer_freq(self.dates)
+        start_date = self.dates[-1] + pd.tseries.frequencies.to_offset(freq)
+        forecast_index = pd.date_range(start=start_date, periods=steps, freq=freq)
+        
+        forecast_df = pd.DataFrame(forecast_states, index=forecast_index, 
+                                columns=['L', 'S', 'C', 'lambda'])
+        
+        # Generate yield curves from forecasted parameters
+        yield_curves = self._generate_yield_curves(forecast_df, self.maturities)
+        
+        # Calculate confidence intervals
+        lower_bounds = []
+        upper_bounds = []
+        
+        for i in range(steps):
+            state_std = np.sqrt(np.diag(forecast_covs[i]))
+            lower_bound = forecast_states[i] - z_value * state_std
+            upper_bound = forecast_states[i] + z_value * state_std
+            lower_bounds.append(lower_bound)
+            upper_bounds.append(upper_bound)
+        
+        lower_bound_df = pd.DataFrame(lower_bounds, index=forecast_index, 
+                                    columns=['L', 'S', 'C', 'lambda'])
+        upper_bound_df = pd.DataFrame(upper_bounds, index=forecast_index, 
+                                    columns=['L', 'S', 'C', 'lambda'])
+        
+        forecast_intervals = (lower_bound_df, upper_bound_df)
+        
+        if return_param_estimates:
+            return yield_curves, forecast_df, forecast_covs, forecast_intervals
+        
+        return yield_curves
 
+    def _generate_yield_curves(self, params_df, maturities=None):
+        """
+        Generate yield curves from DNS parameters.
+        
+        Parameters:
+        params_df (DataFrame): DNS parameters with columns ['L', 'S', 'C', 'lambda'].
+        maturities (ndarray, optional): Maturities to use. If None, use self.maturities.
+        
+        Returns:
+        DataFrame: Generated yield curves.
+        """
+        if maturities is None:
+            maturities = self.maturities
+        
+        yields = np.zeros((len(params_df), len(maturities)))
+        
+        for i, (_, row) in enumerate(params_df.iterrows()):
+            L, S, C, lam = row
+            for j, tau in enumerate(maturities):
+                # DNS loading functions
+                e = np.exp(-lam * tau)
+                term = (1 - e) / (lam * tau) if lam * tau > 1e-6 else 1.0
+                yields[i, j] = L + S * term + C * (term - e)
+        
+        yield_curves = pd.DataFrame(yields, index=params_df.index, 
+                                columns=[f'tau_{tau:.4f}' for tau in maturities])
+        
+        return yield_curves
