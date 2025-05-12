@@ -41,7 +41,6 @@ class CSVAR:
         Returns:
         array-like: The yield curve values.
         """
-        # Ensure tau is a numpy array
         tau = np.array(tau, dtype=float)
         
         term1 = (1 - np.exp(-lambda_ * tau)) / (lambda_ * tau)
@@ -71,7 +70,7 @@ class CSVAR:
         # Input Checks
         input_checks(dates, data, maturities)
         
-        # Initialize nelson-siegel parameters
+        # Init params
         params = pd.DataFrame(index=dates, columns=['L', 'S', 'C', 'lambda'])
         params = params.fillna(0).infer_objects(copy=False)
         params = params.astype(float)

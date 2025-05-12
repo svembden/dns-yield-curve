@@ -1,5 +1,3 @@
-#@TODO IMPLEMENT:
-
 import pandas as pd
 import numpy as np
 from scipy.linalg import cholesky, solve_triangular, inv
@@ -22,12 +20,12 @@ class KALMAN:
         custom_logger (Logger, optional): Custom logger instance. If None, a default logger will be created.
         """
         if custom_logger is None:
-            self.logger = setup_logger(__name__)
+            self.logger = setup_logger(__name__) # Create logger without log file
         else:
             self.logger = custom_logger
-        self.params = None        # Estimated parameter vector
-        self.filtered_states = None  # Kalman filtered state estimates
-        self.covariances = None     # Filter covariance matrices
+        self.params = None
+        self.filtered_states = None
+        self.covariances = None
         self.maturities = None
         self.dates = None
 
@@ -37,7 +35,8 @@ class KALMAN:
         Extended Kalman Filter negative log-likelihood.
         """
         T, N = y.shape
-        # Unpack parameters
+        
+        # Unpack params
         mu = params[0:4]
         phi = params[4:8]
         q_flat = params[8:24]
@@ -51,7 +50,7 @@ class KALMAN:
         log_lik = 0.0
         x_tt = mu.copy()
         P_tt = np.eye(4) * 0.1
-        # P_tt = np.diag(np.var(fac, axis=0).tolist() + [0.01]) # based on empirical variance of factors
+        # P_tt = np.diag(np.var(fac, axis=0).tolist() + [1e-4]) # based on empirical variance of factors
 
         for t in range(T):
             # Prediction
@@ -60,6 +59,7 @@ class KALMAN:
 
             L, S, C, lam = x_pred
             lam = np.clip(lam, 1e-4, 10) # ensure positive
+            
             # Build B and H
             B = np.zeros((N, 3))
             H = np.zeros((N, 4))
@@ -70,6 +70,7 @@ class KALMAN:
                 B[i,0] = 1
                 B[i,1] = (1 - e) / denom
                 B[i,2] = B[i,1] - e
+                
                 # Derivatives
                 dS = (tau_i*lam*e - (1 - e)) / (tau_i * lam**2)
                 dC = dS + tau_i*e
@@ -100,16 +101,16 @@ class KALMAN:
 
     @staticmethod
     def _initialize_dns_params(y: np.ndarray, tau: np.ndarray,
-                               lambda_init: float = 0.5, q_scale: float = 0.01):
+                               lambda_init: float = 0.4, q_scale: float = 0.01):
         """
         Initial guess for EKF parameter estimation.
         """
-        T, N = y.shape
         # PCA on centered yields
         y_centered = y - y.mean(axis=0)
         pca = PCA(n_components=3)
         fac = pca.fit_transform(y_centered)
         mu = np.array([fac[:,0].mean(), fac[:,1].mean(), fac[:,2].mean(), lambda_init])
+        
         # AR(1) coeffs
         phi = []
         for i in range(3):
@@ -118,13 +119,11 @@ class KALMAN:
         phi.append(0.9)  # phi lambda
         phi = np.array(phi)
         # phi = np.array([0.9, 0.9, 0.9, 0.9]) # fix phi to 0.9
-        # process noise
-        q = np.tril(np.random.randn(4,4) * q_scale)
+
+        q = np.tril(np.random.randn(4,4) * q_scale) # process noise
         q_flat = q.flatten()
-        # obs noise
-        sigma = np.std(y, axis=0) * 0.5 # pragmatic way of shrinking
-        # pack
-        params0 = np.concatenate([mu, phi, q_flat, sigma])
+        sigma = np.std(y, axis=0) * 0.5 # obs noise * pragmatic scaling
+        params0 = np.concatenate([mu, phi, q_flat, sigma]) # pack
         
         return params0
 
@@ -146,10 +145,13 @@ class KALMAN:
         self.maturities = maturities
         y = data.values
         tau = maturities
-        # initialize
+        
+        # Init
         params0 = self._initialize_dns_params(y, tau)
         self.logger.debug(f"Initial parameters: {params0}")
         bounds = [(None,None)]*4 + [(0.001,0.999)]*4 + [(-1,1)]*16 + [(1e-6,None)]*len(tau)
+        
+        # Optimize
         self.logger.info("Starting EKF parameter estimation...")
         start_time = datetime.now()
         result = minimize(self._ekf_loglik, params0,
@@ -157,7 +159,7 @@ class KALMAN:
         self.params = result.x
         self.logger.info(f"Optimized log-likelihood: {-result.fun}. Time taken: {datetime.now()-start_time}")
         
-        # Run Kalman filter with optimized parameters to store states and covariances
+        # Run filter with optimized params
         self.filtered_states, self.covariances = self._run_kalman_filter(self.params, y, tau)
         self.logger.debug(f"Stored {len(self.filtered_states)} filtered states and covariance matrices")
         
@@ -176,7 +178,8 @@ class KALMAN:
         tuple: (filtered_states, covariances)
         """
         T, N = y.shape
-        # Unpack parameters
+        
+        # Unpack params
         mu = params[0:4]
         phi = params[4:8]
         q_flat = params[8:24]
@@ -187,11 +190,9 @@ class KALMAN:
         Q = q @ q.T
         Sigma = np.diag(sigma_diag)
 
-        # Storage for filtered states and covariances
         filtered_states = np.zeros((T, 4))
         covariances = []
-        
-        # Initialize
+    
         x_tt = mu.copy()
         P_tt = np.eye(4) * 0.1
 
@@ -231,7 +232,6 @@ class KALMAN:
                 x_tt = x_pred + K @ v
                 P_tt = (np.eye(4) - K @ H) @ P_pred
             except np.linalg.LinAlgError:
-                # In case of numerical issues, use previous values
                 self.logger.warning(f"Numerical issue at step {t}. Using previous state and covariance.")
                 
             # Store filtered state and covariance
@@ -255,39 +255,30 @@ class KALMAN:
         list: Forecasted covariance matrices (if return_param_estimates is True).
         tuple: Forecasted confidence intervals (if return_param_estimates is True).
         """
-        if self.params is None:
+        if self.params is None or self.filtered_states is None:
             raise ValueError("Model not fitted. Please fit the model first.")
-        
-        if self.filtered_states is None:
-            raise ValueError("No filtered states available. Make sure to run fit() with store_states=True.")
         
         self.logger.info(f"Forecasting {steps} steps ahead...")
         
-        # Unpack parameters
+        # Unpack params
         N = len(self.maturities)
         mu = self.params[0:4]
         phi = self.params[4:8]
         q_flat = self.params[8:24]
         
-        # Construct transition matrix
-        A = np.diag(phi)
-        
-        # Construct process noise covariance
+        A = np.diag(phi) # transition matrix
         q = q_flat.reshape(4, 4)
-        Q = q @ q.T
+        Q = q @ q.T # process noise covariance
         
-        # Starting point for forecasting: last filtered state and covariance
+        # Starting point foreecast
         last_state = self.filtered_states[-1]
         last_cov = self.covariances[-1]
         
-        # Prepare forecast containers
         forecast_states = np.zeros((steps, 4))
         forecast_covs = []
+
+        z_value = -1 * norm.ppf((1 - conf_int) / 2) # for CI
         
-        # Calculate Z critical value for confidence interval
-        z_value = -1 * norm.ppf((1 - conf_int) / 2)
-        
-        # Forecast states and covariances
         x_pred = last_state.copy()
         P_pred = last_cov.copy()
         
@@ -295,12 +286,10 @@ class KALMAN:
             # State prediction
             x_pred = mu + A @ (x_pred - mu)
             P_pred = A @ P_pred @ A.T + Q
-            
-            # Store predictions
             forecast_states[i] = x_pred
             forecast_covs.append(P_pred.copy())
         
-        # Create DataFrame for forecasts
+        # Create DF for forecasts
         freq = pd.infer_freq(self.dates)
         start_date = self.dates[-1] + pd.tseries.frequencies.to_offset(freq)
         forecast_index = pd.date_range(start=start_date, periods=steps, freq=freq)
