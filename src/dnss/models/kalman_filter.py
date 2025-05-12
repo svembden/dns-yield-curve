@@ -130,7 +130,6 @@ def initialize_dns_params(y, tau, lambda_init=0.5, q_scale=0.01):
     phi = [0.95, 0.9, 0.8, 0.9]
 
     # q: small process noise, lower-triangular
-    np.random.seed(42)
     q = np.tril(np.random.randn(4, 4) * q_scale)
     q_flat = q.flatten()
 
@@ -152,6 +151,10 @@ def main():
     T, N = 100, 8
     tau = np.linspace(0.25, 10, N)
     y = np.random.randn(T, N) * 0.01  # Replace with real data
+    
+    print("Shape of y:", y.shape)
+    print("Type of y:", type(y))
+    print(y)
 
     # Initial guess
     params0 = initialize_dns_params(y, tau)
@@ -166,4 +169,24 @@ def main():
     print("Estimated parameters:", result.x)
     
 
-main()
+# main()
+
+def TEMP_KALMAN(dates, maturities, data):
+    """
+    Temporary function to run Kalman filter on data.
+    """
+    
+    T, N = data.shape
+    tau = maturities
+    y = np.array(data.values)
+    
+
+    
+    
+    params0 = initialize_dns_params(y, tau)
+    logger.debug("Initial parameters:", params0)
+    bounds = [(None, None)]*4 + [(0.001, 0.999)]*4 + [(-1, 1)]*16 + [(1e-6, None)]*N
+    result = minimize(ekf_loglik, params0, args=(y, tau), bounds=bounds, method='L-BFGS-B')
+    print("Optimized log-likelihood:", -result.fun)
+    print("Estimated parameters:", result.x)
+    return result.x
