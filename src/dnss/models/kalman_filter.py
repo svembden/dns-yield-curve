@@ -6,17 +6,19 @@ from statsmodels.tsa.ar_model import AutoReg
 from scipy.optimize import minimize
 from scipy.stats import norm
 from dnss.utils.logging import setup_logger
-from dnss.utils.helpers import input_checks
+from dnss.utils.helpers import input_checks, generate_yield_curves
 from datetime import datetime
 
 class KALMAN:
     """Extended Kalman Filter for Dynamic Nelson-Siegel yield curve modeling."""
 
-    def __init__(self, custom_logger=None):
+    def __init__(self, fix_lambda=False, lambda_value=0.4, custom_logger=None):
         """
         Initialize KALMAN model.
 
         Parameters:
+        fix_lambda (bool): Whether to fix the lambda parameter at a constant value
+        lambda_value (float): Value to use for lambda if fixed
         custom_logger (Logger, optional): Custom logger instance. If None, a default logger will be created.
         """
         if custom_logger is None:
@@ -28,37 +30,66 @@ class KALMAN:
         self.covariances = None
         self.maturities = None
         self.dates = None
+        self.fix_lambda = fix_lambda
+        self.lambda_value = lambda_value
 
-    @staticmethod
-    def _ekf_loglik(params: np.ndarray, y: np.ndarray, tau: np.ndarray) -> float:
+    def _ekf_loglik(self, params: np.ndarray, y: np.ndarray, tau: np.ndarray) -> float:
         """
         Extended Kalman Filter negative log-likelihood.
         """
         T, N = y.shape
         
-        # Unpack params
-        mu = params[0:4]
-        phi = params[4:8]
-        q_flat = params[8:24]
-        sigma_diag = params[24:24+N]
-
-        A = np.diag(phi)
-        q = q_flat.reshape(4, 4)
-        Q = q @ q.T
+        # Unpack params - different parameter structure when lambda is fixed
+        if self.fix_lambda:
+            # When lambda is fixed, we only have L, S, C as states to estimate
+            mu = params[0:3]
+            phi = params[3:6]
+            q_flat = params[6:15]  # 3x3 lower triangular for process noise
+            sigma_diag = params[15:15+N]
+            
+            # Construct full state with fixed lambda
+            mu_full = np.zeros(4)
+            mu_full[:3] = mu
+            mu_full[3] = self.lambda_value
+            
+            phi_full = np.zeros(4)
+            phi_full[:3] = phi
+            phi_full[3] = 1.0  # Fixed lambda (no dynamics)
+            
+            # Create transition matrix
+            A = np.diag(phi_full)
+            
+            # Create process noise matrix
+            q = q_flat.reshape(3, 3)
+            Q = np.zeros((4, 4))
+            Q[:3, :3] = q @ q.T  # Only applies to L, S, C
+        else:
+            # Original case with lambda as a state
+            mu_full = params[0:4]
+            phi_full = params[4:8]
+            q_flat = params[8:24]
+            sigma_diag = params[24:24+N]
+            
+            A = np.diag(phi_full)
+            q = q_flat.reshape(4, 4)
+            Q = q @ q.T
+        
         Sigma = np.diag(sigma_diag)
 
         log_lik = 0.0
-        x_tt = mu.copy()
+        x_tt = mu_full.copy()
         P_tt = np.eye(4) * 0.1
-        # P_tt = np.diag(np.var(fac, axis=0).tolist() + [1e-4]) # based on empirical variance of factors
 
         for t in range(T):
             # Prediction
-            x_pred = mu + A @ (x_tt - mu)
+            x_pred = mu_full + A @ (x_tt - mu_full)
             P_pred = A @ P_tt @ A.T + Q
 
             L, S, C, lam = x_pred
-            lam = np.clip(lam, 1e-4, 10) # ensure positive
+            if self.fix_lambda:
+                lam = self.lambda_value  # Override with fixed value
+            else:
+                lam = np.clip(lam, 1e-4, 10)  # ensure positive
             
             # Build B and H
             B = np.zeros((N, 3))
@@ -72,13 +103,18 @@ class KALMAN:
                 B[i,2] = B[i,1] - e
                 
                 # Derivatives
-                dS = (tau_i*lam*e - (1 - e)) / (tau_i * lam**2)
-                dC = dS + tau_i*e
-                dLam = S * dS + C * dC
-                H[i,0] = 1
-                H[i,1] = B[i,1]
-                H[i,2] = B[i,2]
-                H[i,3] = dLam
+                H[i,0] = 1  # dR/dL = 1
+                H[i,1] = B[i,1]  # dR/dS = B_1
+                H[i,2] = B[i,2]  # dR/dC = B_2
+                
+                if not self.fix_lambda:
+                    # Only compute lambda derivatives if lambda is not fixed
+                    dS = (tau_i*lam*e - (1 - e)) / (tau_i * lam**2)
+                    dC = dS + tau_i*e
+                    dLam = S * dS + C * dC
+                    H[i,3] = dLam
+                else:
+                    H[i,3] = 0  # No need for lambda derivative when fixed
 
             # Observation prediction
             h = B @ np.array([L, S, C])
@@ -95,13 +131,16 @@ class KALMAN:
 
             K = P_pred @ H.T @ inv(S_t)
             x_tt = x_pred + K @ v
+            
+            if self.fix_lambda:
+                x_tt[3] = self.lambda_value  # Maintain fixed lambda
+                
             P_tt = (np.eye(4) - K @ H) @ P_pred
 
         return log_lik
 
-    @staticmethod
-    def _initialize_dns_params(y: np.ndarray, tau: np.ndarray,
-                               lambda_init: float = 0.4, q_scale: float = 0.01):
+    def _initialize_dns_params(self, y: np.ndarray, tau: np.ndarray,
+                               q_scale: float = 0.01):
         """
         Initial guess for EKF parameter estimation.
         """
@@ -109,19 +148,37 @@ class KALMAN:
         y_centered = y - y.mean(axis=0)
         pca = PCA(n_components=3)
         fac = pca.fit_transform(y_centered)
-        mu = np.array([fac[:,0].mean(), fac[:,1].mean(), fac[:,2].mean(), lambda_init])
         
-        # AR(1) coeffs
-        phi = []
-        for i in range(3):
-            model = AutoReg(fac[:, i], lags=1).fit()
-            phi.append(model.params[1])
-        phi.append(0.9)  # phi lambda
-        phi = np.array(phi)
-        # phi = np.array([0.9, 0.9, 0.9, 0.9]) # fix phi to 0.9
-
-        q = np.tril(np.random.randn(4,4) * q_scale) # process noise
-        q_flat = q.flatten()
+        # Initial parameter setup differs with fixed lambda
+        if self.fix_lambda:
+            mu = np.array([fac[:,0].mean(), fac[:,1].mean(), fac[:,2].mean()])
+            
+            # AR(1) coeffs for L, S, C only
+            phi = []
+            for i in range(3):
+                model = AutoReg(fac[:, i], lags=1).fit()
+                phi.append(model.params[1])
+            phi = np.array(phi)
+            
+            # Process noise for 3x3 matrix (L,S,C only)
+            q = np.tril(np.random.randn(3, 3) * q_scale)
+            q_flat = q.flatten()
+        else:
+            # Original case with lambda as a state
+            mu = np.array([fac[:,0].mean(), fac[:,1].mean(), fac[:,2].mean(), self.lambda_value])
+            
+            # AR(1) coeffs including lambda
+            phi = []
+            for i in range(3):
+                model = AutoReg(fac[:, i], lags=1).fit()
+                phi.append(model.params[1])
+            phi.append(0.9)  # phi lambda
+            phi = np.array(phi)
+            
+            # Process noise for 4x4 matrix
+            q = np.tril(np.random.randn(4, 4) * q_scale)
+            q_flat = q.flatten()
+        
         sigma = np.std(y, axis=0) * 0.5 # obs noise * pragmatic scaling
         params0 = np.concatenate([mu, phi, q_flat, sigma]) # pack
         
@@ -149,13 +206,22 @@ class KALMAN:
         # Init
         params0 = self._initialize_dns_params(y, tau)
         self.logger.debug(f"Initial parameters: {params0}")
-        bounds = [(None,None)]*4 + [(0.001,0.999)]*4 + [(-1,1)]*16 + [(1e-6,None)]*len(tau)
+        
+        # Bounds depend on whether lambda is fixed
+        if self.fix_lambda:
+            # mu (3), phi (3), q_elements (9), and sigma (N)
+            bounds = [(None,None)]*3 + [(0.001,0.999)]*3 + [(-1,1)]*9 + [(1e-6,None)]*len(tau)
+        else:
+            bounds = [(None,None)]*4 + [(0.001,0.999)]*4 + [(-1,1)]*16 + [(1e-6,None)]*len(tau)
         
         # Optimize
-        self.logger.info("Starting EKF parameter estimation...")
+        if self.fix_lambda:
+            self.logger.info(f"Starting EKF parameter estimation with fixed lambda={self.lambda_value}...")
+        else:
+            self.logger.info("Starting EKF parameter estimation with variable lambda...")
         start_time = datetime.now()
-        result = minimize(self._ekf_loglik, params0,
-                          args=(y, tau), bounds=bounds, method='L-BFGS-B')
+        result = minimize(lambda p: self._ekf_loglik(p, y, tau), params0,
+                          bounds=bounds, method='L-BFGS-B')
         self.params = result.x
         self.logger.info(f"Optimized log-likelihood: {-result.fun}. Time taken: {datetime.now()-start_time}")
         
@@ -168,41 +234,57 @@ class KALMAN:
     def _run_kalman_filter(self, params, y, tau):
         """
         Run Kalman filter with given parameters and store states and covariances.
-        
-        Parameters:
-        params (ndarray): Parameter vector.
-        y (ndarray): Yield data.
-        tau (ndarray): Maturities.
-        
-        Returns:
-        tuple: (filtered_states, covariances)
         """
         T, N = y.shape
         
         # Unpack params
-        mu = params[0:4]
-        phi = params[4:8]
-        q_flat = params[8:24]
-        sigma_diag = params[24:24+N]
+        if self.fix_lambda:
+            mu = params[0:3]
+            phi = params[3:6]
+            q_flat = params[6:15]
+            sigma_diag = params[15:15+N]
+            
+            mu_full = np.zeros(4)
+            mu_full[:3] = mu
+            mu_full[3] = self.lambda_value
+            
+            phi_full = np.zeros(4)
+            phi_full[:3] = phi
+            phi_full[3] = 1.0  # fixed lambda
+            
+            A = np.diag(phi_full) # transition matrix
+            q = q_flat.reshape(3, 3)
+            Q = np.zeros((4, 4)) # process noise covariance
+            Q[:3, :3] = q @ q.T 
+        else:
+            mu_full = params[0:4]
+            phi_full = params[4:8]
+            q_flat = params[8:24]
+            sigma_diag = params[24:24+N]
+            
+            A = np.diag(phi_full)
+            q = q_flat.reshape(4, 4)
+            Q = q @ q.T
 
-        A = np.diag(phi)
-        q = q_flat.reshape(4, 4)
-        Q = q @ q.T
         Sigma = np.diag(sigma_diag)
 
         filtered_states = np.zeros((T, 4))
         covariances = []
-    
-        x_tt = mu.copy()
+
+        x_tt = mu_full.copy()
         P_tt = np.eye(4) * 0.1
 
         for t in range(T):
             # Prediction
-            x_pred = mu + A @ (x_tt - mu)
+            x_pred = mu_full + A @ (x_tt - mu_full)
             P_pred = A @ P_tt @ A.T + Q
 
             L, S, C, lam = x_pred
-            lam = np.clip(lam, 1e-4, 10) # ensure positive
+            if self.fix_lambda:
+                lam = self.lambda_value
+            else:
+                lam = np.clip(lam, 1e-4, 10)  # ensure positive
+            
             # Build B and H
             B = np.zeros((N, 3))
             H = np.zeros((N, 4))
@@ -230,6 +312,8 @@ class KALMAN:
             try:
                 K = P_pred @ H.T @ inv(S_t)
                 x_tt = x_pred + K @ v
+                if self.fix_lambda:
+                    x_tt[3] = self.lambda_value
                 P_tt = (np.eye(4) - K @ H) @ P_pred
             except np.linalg.LinAlgError:
                 self.logger.warning(f"Numerical issue at step {t}. Using previous state and covariance.")
@@ -266,9 +350,9 @@ class KALMAN:
         phi = self.params[4:8]
         q_flat = self.params[8:24]
         
-        A = np.diag(phi) # transition matrix
+        A = np.diag(phi) 
         q = q_flat.reshape(4, 4)
-        Q = q @ q.T # process noise covariance
+        Q = q @ q.T 
         
         # Starting point foreecast
         last_state = self.filtered_states[-1]
@@ -298,7 +382,7 @@ class KALMAN:
                                 columns=['L', 'S', 'C', 'lambda'])
         
         # Generate yield curves from forecasted parameters
-        yield_curves = self._generate_yield_curves(forecast_df, self.maturities)
+        yield_curves = generate_yield_curves(forecast_df, self.maturities)
         
         # Calculate confidence intervals
         lower_bounds = []
@@ -322,34 +406,5 @@ class KALMAN:
         
         if return_param_estimates:
             return yield_curves, forecast_df, forecast_covs, forecast_intervals
-        
-        return yield_curves
-
-    def _generate_yield_curves(self, params_df, maturities=None):
-        """
-        Generate yield curves from DNS parameters.
-        
-        Parameters:
-        params_df (DataFrame): DNS parameters with columns ['L', 'S', 'C', 'lambda'].
-        maturities (ndarray, optional): Maturities to use. If None, use self.maturities.
-        
-        Returns:
-        DataFrame: Generated yield curves.
-        """
-        if maturities is None:
-            maturities = self.maturities
-        
-        yields = np.zeros((len(params_df), len(maturities)))
-        
-        for i, (_, row) in enumerate(params_df.iterrows()):
-            L, S, C, lam = row
-            for j, tau in enumerate(maturities):
-                # DNS loading functions
-                e = np.exp(-lam * tau)
-                term = (1 - e) / (lam * tau) if lam * tau > 1e-6 else 1.0
-                yields[i, j] = L + S * term + C * (term - e)
-        
-        yield_curves = pd.DataFrame(yields, index=params_df.index, 
-                                columns=[f'tau_{tau:.4f}' for tau in maturities])
         
         return yield_curves

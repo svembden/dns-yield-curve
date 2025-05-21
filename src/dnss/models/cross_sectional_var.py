@@ -3,7 +3,7 @@ import numpy as np
 from dnss.utils.logging import setup_logger
 from scipy.optimize import minimize
 from statsmodels.tsa.api import VAR
-from dnss.utils.helpers import input_checks
+from dnss.utils.helpers import input_checks, nelson_siegel_function, generate_yield_curves
 
 class CSVAR:
     """Cross-Sectional Vector Autoregression model for yield curve analysis."""
@@ -27,31 +27,7 @@ class CSVAR:
         self.fix_lambda = fix_lambda
         self.lambda_value = lambda_value
     
-    @staticmethod
-    def _nelson_siegel_function(tau, L, S, C, lambda_):
-        """Nelson-Siegel yield function.
         
-        Parameters:
-        tau (array-like): Maturities.
-        L (float): Long-term yield.
-        S (float): Short-term yield.
-        C (float): Medium-term yield.
-        lambda_ (float): Decay factor.
-        
-        Returns:
-        array-like: The yield curve values.
-        """
-        tau = np.array(tau, dtype=float)
-        
-        term1 = (1 - np.exp(-lambda_ * tau)) / (lambda_ * tau)
-        term2 = term1 - np.exp(-lambda_ * tau)
-        
-        return L + S * term1 + C * term2
-
-    
-    
-    
-    
     def _estimate_cross_sectional_parameters(self, dates, data, maturities):
         """
         Estimate cross-sectional DNS parameters (βs) at each point in time.
@@ -87,16 +63,12 @@ class CSVAR:
             ]
             
             # Bounds for parameters (without lambda)
-            bounds = [
-                (0, None),  # L
-                (None, None),  # S
-                (0, None),  # C
-            ]
+            bounds = [(0, None),(None, None),(0, None)]
             
             # Objective function to minimize with fixed lambda
             def objective_function(params, maturities, observed_yields, lambda_value):
                 L, S, C = params
-                model_yields = self._nelson_siegel_function(maturities, L, S, C, lambda_value)
+                model_yields = nelson_siegel_function(maturities, L, S, C, lambda_value)
                 return np.sum((observed_yields - model_yields) ** 2)
             
             self.logger.info(f"Starting parameter estimation with fixed lambda={self.lambda_value}...")
@@ -131,17 +103,12 @@ class CSVAR:
             self.logger.debug(f"Initial parameter guesses:\n{initial_params}")
             
             # Bounds for parameters (with lambda)
-            bounds = [
-                (0, None),  # L
-                (None, None),  # S
-                (0, None),  # C
-                (1e-8, None)  # lambda
-            ]
+            bounds = [(0, None),(None, None),(0, None),(1e-8, None)]
             
             # Objective function to minimize with variable lambda
             def objective_function(params, maturities, observed_yields):
-                L, S, C, lambda_ = params
-                model_yields = self._nelson_siegel_function(maturities, L, S, C, lambda_)
+                L, S, C, lam = params
+                model_yields = nelson_siegel_function(maturities, L, S, C, lam)
                 return np.sum((observed_yields - model_yields) ** 2)
             
             self.logger.info("Starting parameter estimation with variable lambda...")
@@ -166,6 +133,7 @@ class CSVAR:
                 params.loc[dates[i], 'lambda'] = result.x[3]
         
         self.params = params
+        
         return params
 
     
@@ -199,45 +167,10 @@ class CSVAR:
         results = model.fit(maxlags=maxlags, ic=ic)
         
         self.var_results = results
+        
         return results
     
-    
-    def _generate_yield_curves(self, parameter_df):
-        """
-        Generate yield curves from parameters.
-        
-        Parameters:
-        parameter_df (DataFrame): DataFrame containing L, S, C, and lambda parameters.
-        
-        Returns:
-        DataFrame: Yield curves for each date in the parameter DataFrame.
-        """
-        if self.maturities is None:
-            raise ValueError("Maturities not defined. Please estimate parameters first.")
-        
-        yield_curves = pd.DataFrame(index=parameter_df.index, columns=self.maturities)
-        
-        for date in parameter_df.index:
-            L = parameter_df.loc[date, 'L']
-            S = parameter_df.loc[date, 'S']
-            C = parameter_df.loc[date, 'C']
-            
-            if 'lambda' in parameter_df.columns:
-                lambda_ = parameter_df.loc[date, 'lambda']
-            else:
-                lambda_ = self.lambda_value  # Use fixed lambda if not in DataFrame
-            
-            yield_curves.loc[date] = self._nelson_siegel_function(
-                self.maturities, L, S, C, lambda_
-            )
-        
-        # Ensure yield curves is df
-        yield_curves = yield_curves.astype(float)
-        yield_curves.index = pd.to_datetime(yield_curves.index)
-        
-        return yield_curves
-    
-    
+      
     def fit(self, dates, maturities, data, maxlags=5, ic='aic', return_var_model=False):
         """
         Fit the Cross-Sectional VAR model in two steps:
@@ -335,7 +268,7 @@ class CSVAR:
             forecast_intervals = None
         
         # Generate yield curves from forecasted parameters
-        yield_curves = self._generate_yield_curves(forecast_df)
+        yield_curves = generate_yield_curves(forecast_df)
         
         if return_param_estimates:
             return yield_curves, forecast_df, forecast_variance, forecast_intervals

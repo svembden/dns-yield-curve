@@ -70,3 +70,54 @@ def input_checks(dates, data, maturities):
             raise ValueError("Length of maturities must match the number of columns in data.")
         if not len(dates) == len(data):
             raise ValueError("Length of dates must match the number of rows in data.")
+        
+
+def nelson_siegel_function(tau, L, S, C, lam):
+    """
+    Nelson-Siegel yield function.
+    
+    Parameters:
+    tau (float or array-like): Maturities.
+    L (float): Long-term yield - Level.
+    S (float): Short-term yield - Slope.
+    C (float): Medium-term yield - Curvature.
+    lam (float): Decay factor.
+    
+    Returns:
+    float or array-like: The yield curve values.
+    """
+    tau = np.asarray(tau, dtype=float)
+    ltau = lam * tau
+
+    # Avoid division by zero or near-zero
+    with np.errstate(divide='ignore', invalid='ignore'):
+        term1 = np.where(ltau > 1e-6, (1 - np.exp(-ltau)) / ltau, 1.0)
+    term2 = term1 - np.exp(-ltau)
+
+    return L + S * term1 + C * term2
+
+def generate_yield_curves(self, params_df, maturities=None):
+        """
+        Generate yield curves from DNS parameters.
+        
+        Parameters:
+        params_df (DataFrame): DNS parameters with columns ['L', 'S', 'C', 'lambda'].
+        maturities (ndarray, optional): Maturities to use. If None, use self.maturities.
+        
+        Returns:
+        DataFrame: Generated yield curves.
+        """
+        if maturities is None:
+            maturities = self.maturities
+        
+        yields = np.zeros((len(params_df), len(maturities)))
+        
+        for i, (_, row) in enumerate(params_df.iterrows()):
+            L, S, C, lam = row
+            for j, tau in enumerate(maturities):
+                yields[i, j] = nelson_siegel_function(tau, L, S, C, lam)
+        
+        yield_curves = pd.DataFrame(yields, index=params_df.index, 
+                                columns=[f'tau_{tau:.4f}' for tau in maturities])
+        
+        return yield_curves
