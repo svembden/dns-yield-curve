@@ -3,8 +3,8 @@ from setuptools import setup, find_packages
 setup(
     name='dns-yield-curve',
     version='0.1.0',
-    author='Your Name',
-    author_email='your.email@example.com',
+    author='Sem van Embden',
+    author_email='semvanembden@gmail.com',
     description='Dynamic Nelson Siegel model for yield curve estimation',
     packages=find_packages(where='src'),
     package_dir={'': 'src'},
@@ -12,10 +12,6 @@ setup(
         'pandas',
         'numpy',
         'statsmodels',
-        'tensorflow',  # For LSTM
-        'filterpy',    # For Kalman Filter
-        'matplotlib',   # For plotting (if needed)
-        'scikit-learn'  # For any additional machine learning tasks
     ],
     classifiers=[
         'Programming Language :: Python :: 3',

@@ -1,9 +1,9 @@
 import pandas as pd
 import numpy as np
-from dnss.utils.logging import setup_logger
+from ..utils.logging import setup_logger
 from scipy.optimize import minimize
 from statsmodels.tsa.api import VAR
-from dnss.utils.helpers import input_checks, nelson_siegel_function, generate_yield_curves
+from ..utils.helpers import input_checks, nelson_siegel_function, generate_yield_curves
 
 class CSVAR:
     """Cross-Sectional Vector Autoregression model for yield curve analysis."""

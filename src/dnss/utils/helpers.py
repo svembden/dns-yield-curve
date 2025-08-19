@@ -69,8 +69,7 @@ def input_checks(dates, data, maturities):
         if len(maturities) != data.shape[1]:
             raise ValueError("Length of maturities must match the number of columns in data.")
         if not len(dates) == len(data):
-            raise ValueError("Length of dates must match the number of rows in data.")
-        
+            raise ValueError("Length of dates must match the number of rows in data.")     
 
 def nelson_siegel_function(tau, L, S, C, lam):
     """
@@ -96,19 +95,20 @@ def nelson_siegel_function(tau, L, S, C, lam):
 
     return L + S * term1 + C * term2
 
-def generate_yield_curves(self, params_df, maturities=None):
+def generate_yield_curves(params_df, maturities=None):
         """
         Generate yield curves from DNS parameters.
         
         Parameters:
         params_df (DataFrame): DNS parameters with columns ['L', 'S', 'C', 'lambda'].
-        maturities (ndarray, optional): Maturities to use. If None, use self.maturities.
+        maturities (ndarray, optional): Maturities to use. If None, defaults to standard maturities.
         
         Returns:
         DataFrame: Generated yield curves.
         """
         if maturities is None:
-            maturities = self.maturities
+            # Default maturities if none provided
+            maturities = np.array([0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30])
         
         yields = np.zeros((len(params_df), len(maturities)))
         

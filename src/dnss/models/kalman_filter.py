@@ -5,8 +5,8 @@ from sklearn.decomposition import PCA
 from statsmodels.tsa.ar_model import AutoReg
 from scipy.optimize import minimize
 from scipy.stats import norm
-from dnss.utils.logging import setup_logger
-from dnss.utils.helpers import input_checks, generate_yield_curves
+from ..utils.logging import setup_logger
+from ..utils.helpers import input_checks, generate_yield_curves
 from datetime import datetime
 
 class KALMAN:

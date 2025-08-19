@@ -1,0 +1,19 @@
+#Add svenson optionality CSVAR
+#Add svenson optionality Kalman
+Add kwargs other methods
+Adjust math CSVAR
+Let chat write math for Kalman
+make sure there is only one place where the function can be reached
+package
+
+email:
+Hey Simon,
+
+Voor een vak in de Master moesten we vorig jaar een DNS model fitten en dan met een VAR de parameters voorspellen. Hiervoor had ik de code toen moeten schrijven, ook omdat er niet echt een fijne package was die dit op deze manier deed. Dit heb ik laatste week toen ik wat tijd had wat gepolished en - uit nieuwsgierigheid en omdat wij dit ook hadden geprobeerd toen destijds tijdens het vak - ook een filter toegevoegd. Nu heb ik er een package van gemaakt (mochten studenten dezelfde opdracht hebben ook volgend jaar kunnen ze die gebruiken), maar ik vroeg mij af of jij misschien nog opmerkingen had aangezien jij wel thuis bent in de Time Series, ofdat jij misschien nog ideeën hebt voor (een) andere estimation method(s) die leuk zou(den) zijn om toe te voegen.
+
+De package kan je installeren met pip install ...
+
+Ik heb ook twee notebooks toegevoegd in de mail die je kan gebruiken om wat te runnen mocht je willen.
+
+Met vriendelijke groet,
+Sem
