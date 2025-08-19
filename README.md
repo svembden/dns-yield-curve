@@ -15,10 +15,36 @@ This project implements various estimation methods for the Dynamic Nelson Siegel
 
 ### Installation
 
-To install the required packages, run:
+#### Option 1: Install from Source (Recommended for Development)
 
 ```bash
-pip install -r requirements.txt
+# Clone the repository
+git clone https://github.com/svembden/dns-yield-curve.git
+cd dns-yield-curve
+
+# Install in development mode
+pip install -e .
+
+# Or install with optional dependencies
+pip install -e ".[dev,examples]"
+```
+
+#### Option 2: Install as a Package
+
+```bash
+# Install from local directory
+cd path/to/dns-yield-curve
+pip install .
+
+# Or install with extras
+pip install ".[examples]"
+```
+
+#### Option 3: Install from PyPI (Future)
+
+```bash
+# Once published to PyPI
+pip install dns-yield-curve
 ```
 
 ### Basic Usage
@@ -113,9 +139,70 @@ yields, params, variance, intervals = forecast_yield_curve(
 
 See the complete example in `examples/example_usage.py`:
 
-```bash
+```python
 cd examples
 python example_usage.py
+```
+
+## Distribution and Usage Options
+
+### For Developers and Researchers
+
+1. **Development Installation**: Install in editable mode for development
+```bash
+git clone https://github.com/yourusername/dns-yield-curve.git
+cd dns-yield-curve
+pip install -e ".[dev]"
+```
+
+2. **Jupyter Notebooks**: Use the provided notebooks for interactive analysis
+```bash
+pip install ".[examples]"
+jupyter notebook notebooks/
+```
+
+### For End Users
+
+1. **Package Installation**: Install as a regular package
+```bash
+pip install dns-yield-curve  # Future PyPI release
+```
+
+2. **Import and Use**: Simple import and usage
+```python
+from dnss import fit_dns_model, nelson_siegel_curve
+
+# Your analysis code here
+model = fit_dns_model(dates, data, maturities, model_type="csvar")
+forecasts = model.predict(steps=12)
+```
+
+### For Production Use
+
+1. **Docker**: Create a Docker container (see below)
+2. **Virtual Environment**: Use with specific versions
+```bash
+python -m venv dns_env
+source dns_env/bin/activate  # On Windows: dns_env\Scripts\activate
+pip install dns-yield-curve
+```
+
+### Building and Distributing
+
+If you want to build and distribute the package:
+
+```bash
+# Install build tools
+pip install build twine
+
+# Build the package
+python -m build
+
+# Upload to PyPI (requires account)
+twine upload dist/*
+
+# Or upload to Test PyPI first
+twine upload --repository testpypi dist/*
 ```
 
 ## Estimation Methods

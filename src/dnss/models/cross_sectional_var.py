@@ -268,7 +268,7 @@ class CSVAR:
             forecast_intervals = None
         
         # Generate yield curves from forecasted parameters
-        yield_curves = generate_yield_curves(forecast_df)
+        yield_curves = generate_yield_curves(forecast_df, self.maturities)
         
         if return_param_estimates:
             return yield_curves, forecast_df, forecast_variance, forecast_intervals
