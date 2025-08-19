@@ -2,32 +2,9 @@ Metadata-Version: 2.4
 Name: dns-yield-curve
 Version: 0.1.0
 Summary: Dynamic Nelson Siegel model for yield curve estimation and forecasting
-Home-page: https://github.com/svembden/dns-yield-curve
-Author: Sem van Embden
 Author-email: Sem van Embden <semvanembden@gmail.com>
 Maintainer-email: Sem van Embden <semvanembden@gmail.com>
-License: MIT License
-        
-        Copyright (c) 2025 Sem van Embden
-        
-        Permission is hereby granted, free of charge, to any person obtaining a copy
-        of this software and associated documentation files (the "Software"), to deal
-        in the Software without restriction, including without limitation the rights
-        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-        copies of the Software, and to permit persons to whom the Software is
-        furnished to do so, subject to the following conditions:
-        
-        The above copyright notice and this permission notice shall be included in all
-        copies or substantial portions of the Software.
-        
-        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-        SOFTWARE.
-        
+License: MIT
 Project-URL: Homepage, https://github.com/svembden/dns-yield-curve
 Project-URL: Bug Reports, https://github.com/svembden/dns-yield-curve/issues
 Project-URL: Source, https://github.com/svembden/dns-yield-curve
@@ -35,7 +12,6 @@ Keywords: yield curve,nelson siegel,finance,time series,forecasting,kalman,dynam
 Classifier: Development Status :: 3 - Alpha
 Classifier: Intended Audience :: Financial and Insurance Industry
 Classifier: Intended Audience :: Science/Research
-Classifier: License :: OSI Approved :: MIT License
 Classifier: Operating System :: OS Independent
 Classifier: Programming Language :: Python :: 3
 Classifier: Programming Language :: Python :: 3.8
@@ -47,7 +23,6 @@ Classifier: Topic :: Scientific/Engineering :: Mathematics
 Classifier: Topic :: Office/Business :: Financial
 Requires-Python: >=3.8
 Description-Content-Type: text/markdown
-License-File: LICENSE
 Requires-Dist: pandas>=1.0.0
 Requires-Dist: numpy>=1.18.0
 Requires-Dist: scipy>=1.4.0
@@ -63,10 +38,6 @@ Requires-Dist: matplotlib>=3.0.0; extra == "dev"
 Provides-Extra: examples
 Requires-Dist: matplotlib>=3.0.0; extra == "examples"
 Requires-Dist: jupyter; extra == "examples"
-Dynamic: author
-Dynamic: home-page
-Dynamic: license-file
-Dynamic: requires-python
 
 ````markdown
 # Dynamic Nelson Siegel Model
