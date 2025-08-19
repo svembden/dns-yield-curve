@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dns-yield-curve"
+dynamic = ["version"]
+description = "Dynamic Nelson Siegel model for yield curve estimation and forecasting"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Sem van Embden", email = "semvanembden@gmail.com"}
+]
+maintainers = [
+    {name = "Sem van Embden", email = "semvanembden@gmail.com"}
+]
+keywords = ["yield curve", "nelson siegel", "finance", "time series", "forecasting", "kalman", "dynamic nelson siegel"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Office/Business :: Financial",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "pandas>=1.0.0",
+    "numpy>=1.18.0",
+    "scipy>=1.4.0",
+    "statsmodels>=0.11.0",
+    "scikit-learn>=0.22.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov",
+    "black",
+    "flake8",
+    "jupyter",
+    "matplotlib>=3.0.0",
+]
+examples = [
+    "matplotlib>=3.0.0",
+    "jupyter",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/svembden/dns-yield-curve"
+"Bug Reports" = "https://github.com/svembden/dns-yield-curve/issues"
+"Source" = "https://github.com/svembden/dns-yield-curve"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools_scm]
+write_to = "src/dnss/_version.py"

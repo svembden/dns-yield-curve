@@ -1,0 +1,12 @@
+include README.md
+include LICENSE
+include requirements.txt
+include setup.py
+include TODO.txt
+recursive-include src/dnss *.py
+recursive-include examples *.py
+recursive-include notebooks *.ipynb
+global-exclude __pycache__
+global-exclude *.py[co]
+global-exclude .DS_Store
+global-exclude *.so
